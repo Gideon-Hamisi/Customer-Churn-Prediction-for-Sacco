@@ -4,115 +4,128 @@ import numpy as np
 import joblib
 import shap
 import matplotlib.pyplot as plt
+from xgboost import XGBClassifier
 
-# ========== Load model and scaler ==========
-model = joblib.load('churn_model.pkl')
-scaler = joblib.load('scaler.pkl')
+# --------------------------
+# Load Model and Scaler
+# --------------------------
+@st.cache_resource
+def load_model():
+    model = XGBClassifier()
+    model.load_model("xgb_churn_model.json")
+    scaler = joblib.load("scaler.pkl")
+    return model, scaler
 
-# Streamlit page setup
-st.set_page_config(page_title="Mwalimu Sacco Churn Prediction", layout="wide")
-st.title("📊 Mwalimu Sacco – Member Churn Prediction Dashboard")
-st.markdown("""
-Use this dashboard to predict which members are at risk of leaving or reducing engagement.
-Upload a CSV file **or** use the simulation sliders below.
-""")
+model, scaler = load_model()
 
-# ========== Sidebar: File Upload ==========
-st.sidebar.header("📂 Upload Member Data")
-uploaded_file = st.sidebar.file_uploader("Upload CSV file", type=["csv"])
+# --------------------------
+# Dashboard Configuration
+# --------------------------
+st.set_page_config(page_title="Mwalimu Sacco Churn Prediction Dashboard", layout="wide")
 
-# Expected feature columns
-expected_cols = [
-    'AGE', 'GENDER', 'ACCOUNT_AGE_MONTHS', 'MONTHLY_DEPOSITS',
-    'LOAN_ACTIVITY', 'LOAN_REPAYMENT_HISTORY', 'COMPLAINTS_COUNT',
-    'TRANSACTION_FREQUENCY', 'DIGITAL_USAGE'
+st.title("📊 Mwalimu Sacco - Customer Churn Prediction Dashboard")
+st.markdown("Predict and analyze member churn risk with **data-driven insights** and interactive ‘What-If’ simulations.")
+
+# --------------------------
+# Sidebar: What-If Simulation Inputs
+# --------------------------
+st.sidebar.header("🎛 What-If Simulation Inputs")
+
+age = st.sidebar.slider("Member Age", 21, 65, 40)
+account_age = st.sidebar.slider("Account Age (Months)", 1, 120, 36)
+monthly_deposits = st.sidebar.slider("Monthly Deposits (KES)", 1000, 50000, 15000, step=1000)
+loan_activity = st.sidebar.selectbox("Has Active Loan?", [0, 1], index=1, format_func=lambda x: "Yes" if x == 1 else "No")
+loan_repayment = st.sidebar.slider("Loan Repayment History (%)", 50, 100, 85)
+complaints = st.sidebar.slider("Complaints in Last 6 Months", 0, 10, 2)
+transactions = st.sidebar.slider("Transactions per Month", 1, 30, 10)
+digital_usage = st.sidebar.slider("Digital Usage (%)", 0, 100, 60)
+
+# --------------------------
+# Prepare Input Data
+# --------------------------
+features = [
+    "AGE",
+    "ACCOUNT_AGE_MONTHS",
+    "MONTHLY_DEPOSITS",
+    "LOAN_ACTIVITY",
+    "LOAN_REPAYMENT_HISTORY",
+    "COMPLAINTS_COUNT",
+    "TRANSACTION_FREQUENCY",
+    "DIGITAL_USAGE"
 ]
 
-# ========== If user uploads data ==========
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.write("### Uploaded Data Preview", df.head())
+input_data = pd.DataFrame([[
+    age, account_age, monthly_deposits, loan_activity,
+    loan_repayment, complaints, transactions, digital_usage
+]], columns=features)
 
-    # Scale numeric values
-    X_scaled = scaler.transform(df)
+input_scaled = scaler.transform(input_data)
+pred_probs = model.predict_proba(input_scaled)[0]
+churn_prob = float(pred_probs[1])
+stay_prob = float(pred_probs[0])
+prediction = model.predict(input_scaled)[0]
 
-    # Predict probabilities
-    churn_probs = model.predict_proba(df)[:, 1]
-    df['CHURN_PROBABILITY'] = np.round(churn_probs, 3)
-
-    # Assign risk category
-    df['RISK_LEVEL'] = pd.cut(
-        df['CHURN_PROBABILITY'],
-        bins=[0, 0.33, 0.66, 1],
-        labels=['Low', 'Medium', 'High']
-    )
-
-    st.write("### Predictions", df[['CHURN_PROBABILITY', 'RISK_LEVEL']].head())
-
-    # Show summary
-    risk_counts = df['RISK_LEVEL'].value_counts()
-    st.bar_chart(risk_counts)
-
+# --------------------------
+# Risk Categorization
+# --------------------------
+if churn_prob < 0.33:
+    risk_label, color = "🟢 Low Risk", "green"
+elif churn_prob < 0.66:
+    risk_label, color = "🟡 Medium Risk", "orange"
 else:
-    st.info("Upload a CSV file or use the sliders below to simulate predictions.")
+    risk_label, color = "🔴 High Risk", "red"
 
-# ========== Interactive Simulation ==========
-st.markdown("---")
-st.header("🎛️ What-If Simulation")
-
-# Collect input features
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    age = st.slider("Age", 21, 65, 40)
-    gender = st.selectbox("Gender", ["Male", "Female"])
-    account_age = st.slider("Account Age (months)", 6, 180, 36)
-
-with col2:
-    deposits = st.slider("Average Monthly Deposits (KES)", 2000, 50000, 20000, step=1000)
-    loan_activity = st.selectbox("Has Active Loan?", ["Yes", "No"])
-    loan_history = st.slider("Loan Repayment History (%)", 50, 100, 85)
-
-with col3:
-    complaints = st.slider("Complaints (last 6 months)", 0, 10, 1)
-    transactions = st.slider("Monthly Transactions", 1, 20, 8)
-    digital = st.slider("Digital Usage (%)", 0, 100, 60)
-
-# Prepare single record
-input_data = pd.DataFrame({
-    'AGE': [age],
-    'GENDER': [1 if gender == "Male" else 0],
-    'ACCOUNT_AGE_MONTHS': [account_age],
-    'MONTHLY_DEPOSITS': [deposits],
-    'LOAN_ACTIVITY': [1 if loan_activity == "Yes" else 0],
-    'LOAN_REPAYMENT_HISTORY': [loan_history],
-    'COMPLAINTS_COUNT': [complaints],
-    'TRANSACTION_FREQUENCY': [transactions],
-    'DIGITAL_USAGE': [digital]
-})
-
-# Predict
-prob = model.predict_proba(input_data)[:, 1][0]
-risk = (
-    "High" if prob > 0.66 else
-    "Medium" if prob > 0.33 else
-    "Low"
+# --------------------------
+# Display Results
+# --------------------------
+st.subheader("🎯 Predicted Member Churn Risk")
+st.markdown(
+    f"<h2 style='color:{color};'>Churn Probability: {churn_prob*100:.1f}% ({risk_label})</h2>",
+    unsafe_allow_html=True
 )
 
-# Display result
-st.markdown(f"### 🧾 Predicted Churn Probability: **{prob:.2f}** ({risk} Risk)")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Predicted Status", "Likely to Stay" if prediction == 0 else "Likely to Leave")
+with col2:
+    st.metric("Churn Probability", f"{churn_prob*100:.1f}%")
+with col3:
+    st.metric("Retention Probability", f"{stay_prob*100:.1f}%")
 
-# ========== SHAP Explainability ==========
+# --------------------------
+# Feature Importance Plot
+# --------------------------
 st.markdown("---")
-st.header("🔍 Model Explainability (SHAP)")
+st.subheader("📈 Feature Importance (Model Perspective)")
 
-# Compute SHAP values for single prediction
+importances = model.feature_importances_
+fig1, ax1 = plt.subplots(figsize=(8, 5), dpi=120)
+ax1.barh(features, importances, color="skyblue")
+ax1.set_xlabel("Importance Score")
+ax1.set_title("Top Features Driving Churn")
+st.pyplot(fig1, clear_figure=True)
+
+# --------------------------
+# SHAP Explainability
+# --------------------------
+st.markdown("---")
+st.subheader("🔍 Model Explainability (SHAP Analysis)")
+
 explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(input_data)
+shap_values = explainer.shap_values(input_scaled)
 
-# Create SHAP plot
-fig, ax = plt.subplots()
+fig2, ax2 = plt.subplots(figsize=(8, 5), dpi=120)
 shap.summary_plot(shap_values, input_data, plot_type="bar", show=False)
-st.pyplot(fig)
+st.pyplot(fig2, clear_figure=True)
 
-st.caption("SHAP shows which features most influenced this member's churn prediction.")
+# --------------------------
+# Interpretation Help
+# --------------------------
+st.markdown("---")
+st.markdown("""
+### 🧠 Interpretation:
+- **Churn Probability** → Likelihood that a member will leave the Sacco soon.
+- **Retention Probability** → Likelihood that a member will stay active.
+- **High Churn Probability (≥ 66%)** → Requires immediate engagement.
+- Adjust the **sliders** on the left to test how improving deposits, reducing complaints, or increasing digital usage changes churn probability.
+""")
