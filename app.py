@@ -2,17 +2,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import shap
 import matplotlib.pyplot as plt
-from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 # --------------------------
 # Load Model and Scaler
 # --------------------------
 @st.cache_resource
 def load_model():
-    model = XGBClassifier()
-    model.load_model("xgb_churn_model.json")
+    model = joblib.load("rf_churn_model.pkl")
     scaler = joblib.load("scaler.pkl")
     return model, scaler
 
@@ -54,10 +52,9 @@ features = [
     "DIGITAL_USAGE"
 ]
 
-input_data = pd.DataFrame([[
-    age, account_age, monthly_deposits, loan_activity,
-    loan_repayment, complaints, transactions, digital_usage
-]], columns=features)
+input_data = pd.DataFrame([[age, account_age, monthly_deposits, loan_activity,
+                            loan_repayment, complaints, transactions, digital_usage]],
+                          columns=features)
 
 input_scaled = scaler.transform(input_data)
 pred_probs = model.predict_proba(input_scaled)[0]
@@ -93,30 +90,17 @@ with col3:
     st.metric("Retention Probability", f"{stay_prob*100:.1f}%")
 
 # --------------------------
-# Feature Importance Plot
+# Feature Importance (Explainability)
 # --------------------------
 st.markdown("---")
-st.subheader("📈 Feature Importance (Model Perspective)")
+st.subheader("🔍 Model Explainability (Feature Importance)")
 
-importances = model.feature_importances_
-fig1, ax1 = plt.subplots(figsize=(8, 5), dpi=120)
-ax1.barh(features, importances, color="skyblue")
-ax1.set_xlabel("Importance Score")
-ax1.set_title("Top Features Driving Churn")
-st.pyplot(fig1, clear_figure=True)
-
-# --------------------------
-# SHAP Explainability
-# --------------------------
-st.markdown("---")
-st.subheader("🔍 Model Explainability (SHAP Analysis)")
-
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(input_scaled)
-
-fig2, ax2 = plt.subplots(figsize=(8, 5), dpi=120)
-shap.summary_plot(shap_values, input_data, plot_type="bar", show=False)
-st.pyplot(fig2, clear_figure=True)
+importances = pd.Series(model.feature_importances_, index=features)
+fig3, ax3 = plt.subplots(figsize=(8, 5), dpi=120)
+importances.sort_values().plot.barh(ax=ax3, color='lightgreen')
+ax3.set_title("Feature Importance - Impact on Predictions")
+ax3.set_xlabel("Importance Score")
+st.pyplot(fig3, clear_figure=True)
 
 # --------------------------
 # Interpretation Help
@@ -124,8 +108,9 @@ st.pyplot(fig2, clear_figure=True)
 st.markdown("---")
 st.markdown("""
 ### 🧠 Interpretation:
-- **Churn Probability** → Likelihood that a member will leave the Sacco soon.
-- **Retention Probability** → Likelihood that a member will stay active.
-- **High Churn Probability (≥ 66%)** → Requires immediate engagement.
-- Adjust the **sliders** on the left to test how improving deposits, reducing complaints, or increasing digital usage changes churn probability.
+- **Feature Importance** shows which factors most influence member churn.
+- **High churn probability (≥ 66%)** → Member at risk of leaving soon.
+- **Medium risk (33–65%)** → Needs engagement or incentives.
+- **Low risk (< 33%)** → Stable member.
+- Adjust **sliders** on the left to test how improving deposits, reducing complaints, or increasing digital usage changes churn probability.
 """)

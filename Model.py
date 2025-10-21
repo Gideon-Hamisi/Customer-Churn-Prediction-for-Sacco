@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report, roc_auc_score
-from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
 import joblib
 import matplotlib.pyplot as plt
 
@@ -57,17 +57,12 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
 # --------------------------
-# 4. Train Model (XGBoost)
+# 4. Train Model (RandomForest)
 # --------------------------
-model = XGBClassifier(
-    n_estimators=150,
-    max_depth=4,
-    learning_rate=0.1,
-    subsample=0.9,
-    colsample_bytree=0.9,
-    random_state=42,
-    use_label_encoder=False,
-    eval_metric="logloss"
+model = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=8,
+    random_state=42
 )
 model.fit(X_train_scaled, y_train)
 
@@ -86,7 +81,7 @@ print("\nConfusion Matrix:\n", confusion_matrix(y_test, y_pred))
 # --------------------------
 # 6. Save Model and Scaler
 # --------------------------
-model.save_model("xgb_churn_model.json")
+joblib.dump(model, "rf_churn_model.pkl")  # RandomForest model
 joblib.dump(scaler, "scaler.pkl")
 
 # --------------------------
@@ -101,5 +96,5 @@ plt.tight_layout()
 plt.show()
 
 print("\n🎯 Model and scaler saved successfully:")
-print("   → xgb_churn_model.json")
+print("   → rf_churn_model.pkl")
 print("   → scaler.pkl")
